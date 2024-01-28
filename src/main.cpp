@@ -5,6 +5,20 @@ static uint32_t millis() { return xTaskGetTickCount(); }
 
 #include <SmartLeds.h>
 
+#define LGFX_AUTODETECT
+#include <LGFX_AUTODETECT.hpp>
+#include <lv_demo_conf.h>
+#include <lvgl.h>
+
+/*Change to your screen resolution*/
+static const uint16_t screenWidth = 240;
+static const uint16_t screenHeight = 240;
+
+static lv_disp_draw_buf_t draw_buf;
+static lv_color_t buf[2][screenWidth * 10];
+
+LGFX gfx;
+
 const int LED_COUNT = 1;
 const int DATA_PIN = 8;
 const int CHANNEL = 0;
@@ -12,9 +26,43 @@ const int CHANNEL = 0;
 // SmartLed -> RMT driver (WS2812/WS2812B/SK6812/WS2813)
 SmartLed leds(LED_WS2812B, LED_COUNT, DATA_PIN, CHANNEL, DoubleBuffer);
 
-// const int CLK_PIN = 23;
-// APA102 -> SPI driver
-// Apa102 leds(LED_COUNT, CLK_PIN, DATA_PIN, DoubleBuffer);
+/* Display flushing */
+void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
+{
+    if (gfx.getStartCount() == 0)
+    { // Processing if not yet started
+        gfx.startWrite();
+    }
+    gfx.pushImageDMA(area->x1, area->y1, area->x2 - area->x1 + 1, area->y2 - area->y1 + 1, (lgfx::swap565_t *)&color_p->full);
+    lv_disp_flush_ready(disp);
+}
+
+void setup()
+{
+    gfx.begin();
+
+    lv_init();
+    lv_disp_draw_buf_init(&draw_buf, buf[0], buf[1], screenWidth * 10);
+
+    /*Initialize the display*/
+    static lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
+    /*Change the following line to your display resolution*/
+    disp_drv.hor_res = screenWidth;
+    disp_drv.ver_res = screenHeight;
+    disp_drv.flush_cb = my_disp_flush;
+    disp_drv.draw_buf = &draw_buf;
+    lv_disp_drv_register(&disp_drv);
+
+    /*Initialize the input device driver*/
+    static lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    // indev_drv.read_cb = my_touchpad_read;
+    lv_indev_drv_register(&indev_drv);
+
+    lv_demo_benchmark();
+}
 
 uint8_t hue;
 void showGradient()
@@ -36,6 +84,8 @@ void showRgb()
 
 void loop()
 {
+    lv_timer_handler(); /* let the GUI do its work */
+
     if (millis() % 10000 < 5000)
         showGradient();
     else
